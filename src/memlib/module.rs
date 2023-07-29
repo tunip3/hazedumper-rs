@@ -31,7 +31,7 @@ use self::winapi::um::tlhelp32::{
     TH32CS_SNAPMODULE32,
 };
 use crate::memlib::*;
-use std::mem;
+use std::{mem, ptr};
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -39,6 +39,20 @@ pub struct Module {
     pub base: usize,
     pub size: usize,
     pub data: Vec<u8>,
+}
+
+pub const unsafe fn transmute_copy<Src, Dst>(src: &Src) -> Dst {
+    // If Dst has a higher alignment requirement, src might not be suitably aligned.
+    if mem::align_of::<Dst>() > mem::align_of::<Src>() {
+        // SAFETY: `src` is a reference which is guaranteed to be valid for reads.
+        // The caller must guarantee that the actual transmutation is safe.
+        unsafe { ptr::read_unaligned(src as *const Src as *const Dst) }
+    } else {
+        // SAFETY: `src` is a reference which is guaranteed to be valid for reads.
+        // We just checked that `src as *const Dst` was properly aligned.
+        // The caller must guarantee that the actual transmutation is safe.
+        unsafe { ptr::read(src as *const Src as *const Dst) }
+    }
 }
 
 impl Constructor for MODULEENTRY32W {
@@ -80,7 +94,7 @@ impl Module {
             return None;
         }
         let ptr = self.data.get(o)?;
-        let raw: T = unsafe { mem::transmute_copy(ptr) };
+        let raw: T = unsafe { transmute_copy(ptr) };
         Some(raw)
     }
 
